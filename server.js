@@ -4,13 +4,25 @@ const axios = require("axios");
 require("dotenv").config();
 
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 
-app.use(cors({ 
-  origin: ["http://localhost:5173", "https://deploykar.vercel.app"],
-  credentials: true 
+// ─── Frontend URL — env var or localhost fallback ─────────
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
+
+app.use(cors({
+  origin: [
+    "http://localhost:5173",
+    "https://deploykar.vercel.app",
+    FRONTEND_URL,
+  ],
+  credentials: true,
 }));
 app.use(express.json());
+
+// ─── Health check ─────────────────────────────────────────
+app.get("/", (req, res) => {
+  res.json({ status: "Deploykar backend running! 🚀" });
+});
 
 // ─── GitHub OAuth redirect ────────────────────────────────
 app.get("/auth/github", (req, res) => {
@@ -32,11 +44,11 @@ app.get("/auth/github/callback", async (req, res) => {
       { headers: { Accept: "application/json" } }
     );
     const accessToken = tokenRes.data.access_token;
-    if (!accessToken) return res.redirect("http://localhost:5173?error=auth_failed");
-    res.redirect(`http://localhost:5173?token=${accessToken}`);
+    if (!accessToken) return res.redirect(`${FRONTEND_URL}?error=auth_failed`);
+    res.redirect(`${FRONTEND_URL}?token=${accessToken}`);
   } catch (err) {
     console.error("OAuth error:", err.message);
-    res.redirect("http://localhost:5173?error=server_error");
+    res.redirect(`${FRONTEND_URL}?error=server_error`);
   }
 });
 
@@ -73,14 +85,12 @@ app.get("/api/repos", async (req, res) => {
 app.post("/api/deploy", async (req, res) => {
   const { repoUrl, framework } = req.body;
   const githubToken = req.headers.authorization?.split(" ")[1];
-
   if (!githubToken) return res.status(401).json({ error: "No token" });
 
   try {
     const repoPath = repoUrl.replace("https://github.com/", "").trim();
     const repoName = repoPath.split("/")[1];
 
-    // Step 1: GitHub repo ID fetch pannу
     const repoInfoRes = await axios.get(
       `https://api.github.com/repos/${repoPath}`,
       { headers: { Authorization: `Bearer ${githubToken}` } }
@@ -90,7 +100,6 @@ app.post("/api/deploy", async (req, res) => {
 
     console.log(`Deploying: ${repoPath} (ID: ${repoId}, Branch: ${defaultBranch})`);
 
-    // Step 2: Vercel deploy
     const deployRes = await axios.post(
       "https://api.vercel.com/v13/deployments",
       {
@@ -132,12 +141,7 @@ app.post("/api/deploy", async (req, res) => {
   }
 });
 
-// ─── Health check ─────────────────────────────────────────
-app.get("/", (req, res) => {
-  res.json({ status: "Deploykar backend running! 🚀" });
-});
-
-// ─── Deploy status check ──────────────────────────────
+// ─── Deploy status check ──────────────────────────────────
 app.get("/api/deploy-status/:deploymentId", async (req, res) => {
   const { deploymentId } = req.params;
   try {
@@ -153,4 +157,5 @@ app.get("/api/deploy-status/:deploymentId", async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`✅ Deploykar backend running on http://localhost:${PORT}`);
+  console.log(`🌍 Frontend URL: ${FRONTEND_URL}`);
 });
